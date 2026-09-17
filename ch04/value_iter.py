@@ -1,7 +1,6 @@
 """Value iteration with bounded convergence and no rendering side effect."""
 
 
-
 def value_iter_onestep(V, env, gamma=0.9):
     for state in env.states():
         if state == env.goal_state:

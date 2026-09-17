@@ -1,12 +1,20 @@
-"""Import-safe chapter compatibility entry for the monte carlo lesson.
+"""Monte Carlo estimation of the expected sum of dice."""
 
-The original teaching implementation is represented by the stable shared runner;
-run() preserves a bounded, structured execution boundary for Modal and notebooks.
-"""
+import numpy as np
 
-from ch05.mc_control import McAgent, greedy_probs, run  # noqa: F401
-from pytorch.legacy_cli import cli
+
+def sample(dices=2, rng=None):
+    rng = rng or np.random.default_rng()
+    return int(rng.integers(1, 7, size=dices).sum())
+
+
+def run(*, trials=100, dices=2, seed=0):
+    rng = np.random.default_rng(seed)
+    estimate = 0.0
+    for count in range(1, trials + 1):
+        estimate += (sample(dices, rng) - estimate) / count
+    return {"trials": trials, "estimate": float(estimate), "seed": seed}
 
 
 if __name__ == "__main__":
-    cli("monte_carlo")
+    print(run())

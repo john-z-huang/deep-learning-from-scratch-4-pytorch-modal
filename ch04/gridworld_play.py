@@ -1,14 +1,26 @@
-"""Import-safe chapter compatibility entry for the dynamic programming lesson.
+"""Headless GridWorld value initialization used by the chapter demonstration."""
 
-The original teaching implementation is represented by the stable shared runner;
-run() preserves a bounded, structured execution boundary for Modal and notebooks.
-"""
+from __future__ import annotations
 
-from ch04.policy_eval import eval_onestep, policy_eval, uniform_policy  # noqa: F401
-from ch04.policy_iter import policy_iter  # noqa: F401
-from ch04.value_iter import value_iter, value_iter_onestep  # noqa: F401
-from pytorch.legacy_cli import cli
+import json
+import numpy as np
+from common.gridworld import GridWorld
+
+
+def random_values(seed: int = 0) -> dict[tuple[int, int], float]:
+    """Create deterministic values for every GridWorld coordinate."""
+
+    rng = np.random.default_rng(seed)
+    return {state: float(rng.standard_normal()) for state in GridWorld().states()}
+
+
+def run(*, seed: int = 0) -> dict[str, object]:
+    """Return a wall-free value table without opening a renderer."""
+
+    values = random_values(seed)
+    values.pop(GridWorld().wall_state, None)
+    return {"seed": seed, "state_count": len(values), "values": values}
 
 
 if __name__ == "__main__":
-    cli("dynamic_programming")
+    print(json.dumps(run(), indent=2, sort_keys=True))
