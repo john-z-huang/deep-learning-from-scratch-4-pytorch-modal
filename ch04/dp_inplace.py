@@ -1,17 +1,35 @@
-V = {'L1': 0.0, 'L2': 0.0}
+"""In-place Bellman update illustrating update-order effects."""
 
-cnt = 0
-while True:
-    t = 0.5 * (-1 + 0.9 * V['L1']) + 0.5 * (1 + 0.9 * V['L2'])
-    delta = abs(t - V['L1'])
-    V['L1'] = t
+from __future__ import annotations
 
-    t = 0.5 * (0 + 0.9 * V['L1']) + 0.5 * (-1 + 0.9 * V['L2'])
-    delta = max(delta, abs(t - V['L2']))
-    V['L2'] = t
+import json
 
-    cnt += 1
-    if delta < 0.0001:
-        print(V)
-        print(cnt)
-        break
+
+def inplace_update(values: dict[str, float], gamma: float = 0.9) -> dict[str, float]:
+    """Update ``L1`` before ``L2`` to make update order visible."""
+
+    first = 0.5 * (-1 + gamma * values["L1"]) + 0.5 * (1 + gamma * values["L2"])
+    values["L1"] = first
+    second = 0.5 * (gamma * values["L1"]) + 0.5 * (-1 + gamma * values["L2"])
+    values["L2"] = second
+    return values
+
+
+def run(
+    *, threshold: float = 0.0001, gamma: float = 0.9, max_iterations: int = 1000
+) -> dict[str, object]:
+    """Run in-place backups and report the iteration count."""
+
+    if not 0 <= gamma < 1 or threshold <= 0 or max_iterations < 1:
+        raise ValueError("invalid Bellman iteration parameters")
+    values = {"L1": 0.0, "L2": 0.0}
+    for iteration in range(1, max_iterations + 1):
+        old = values.copy()
+        inplace_update(values, gamma)
+        if max(abs(values[key] - old[key]) for key in values) < threshold:
+            return {"values": values, "iterations": iteration}
+    raise RuntimeError("in-place iteration did not converge within max_iterations")
+
+
+if __name__ == "__main__":
+    print(json.dumps(run(), indent=2))

@@ -64,6 +64,38 @@ $ cd ch09
 $ python actor_critic.py
 ```
 
+## Modal と PyTorch の実験入口
+
+本 fork では、`pytorch/` 内の DQN、REINFORCE、Policy Gradient、Actor-Critic
+实现均提供函数化的 `run(...)` 入口；导入模块不会自动启动训练。项目依赖由
+`pyproject.toml` 和 `uv.lock` 固定，Python 基线为 3.11，远程绘图使用 Agg backend。
+
+先确认 Modal profile 已认证，并使用已存在的 `deep-learning-from-scratch-4-results`
+Volume 保存结果：
+
+```bash
+uv sync
+modal run modal_app.py --experiment dqn --device cpu --episodes 1
+modal run modal_app.py --experiment dqn --device gpu --episodes 1
+```
+
+可选实验名为 `dqn`、`reinforce`、`policy_gradient` 和 `actor_critic`。每次运行会返回
+结构化指标，并将 `metrics.json`、`rewards.png` 和 `checkpoint.pt` 写入 Volume 的输出目录。
+远程任务不调用 `plt.show()` 或 `env.render()`，不会依赖本地图形界面。Notebook 仍作为教学
+材料保留；Modal 入口复用已验证的 Python 实验函数，不在远程容器中执行 Notebook 安装命令。
+
+### Notebook 07/08/09 的 PyTorch 导出入口
+
+原始 Notebook 不作为生产入口修改；合规代码导出后的可复用教学脚本位于
+`notebook_exports/`，分别调用 `pytorch/neural_networks.py`、`pytorch/dqn.py` 和
+`pytorch/simple_pg.py`。它们只在 `main()` 中执行短示例，支持 `--device`、短实验参数和
+`--output-dir`，并使用结构化 JSON、Agg PNG 和 checkpoint，不执行 `!pip`、GUI 绘图或
+`env.render()`。例如：
+
+```bash
+PYTHONPATH=. .venv/bin/python -B notebook_exports/08_dqn.py --episodes 1 --max-steps 20 --device cpu
+```
+
 ## ライセンス
 
 本リポジトリのソースコードは[MITライセンス](http://www.opensource.org/licenses/MIT)です。

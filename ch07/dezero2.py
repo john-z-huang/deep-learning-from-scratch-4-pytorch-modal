@@ -1,24 +1,39 @@
-import numpy as np
-from dezero import Variable
+"""Chapter 07 autograd lesson using a PyTorch optimizer."""
 
-def rosenbrock(x0, x1):
-    y = 100 * (x1 - x0 ** 2) ** 2 + (x0 - 1) ** 2
-    return y
+from __future__ import annotations
 
-x0 = Variable(np.array(0.0))
-x1 = Variable(np.array(2.0))
+import json
 
-lr = 0.001
-iters = 10000
+import torch
 
-for i in range(iters):
-    y = rosenbrock(x0, x1)
 
-    x0.cleargrad()
-    x1.cleargrad()
-    y.backward()
+def rosenbrock(x0: torch.Tensor, x1: torch.Tensor) -> torch.Tensor:
+    """Return the differentiable Rosenbrock objective."""
 
-    x0.data -= lr * x0.grad.data
-    x1.data -= lr * x1.grad.data
+    return (1 - x0) ** 2 + 100 * (x1 - x0**2) ** 2
 
-print(x0, x1)
+
+def run(
+    *,
+    steps: int = 20,
+    learning_rate: float = 0.001,
+    device: str | torch.device = "cpu",
+) -> float:
+    """Minimize Rosenbrock's function using explicit autograd steps."""
+
+    if steps < 1:
+        raise ValueError("steps must be at least 1")
+    resolved_device = torch.device(device)
+    x0 = torch.tensor(0.0, device=resolved_device, requires_grad=True)
+    x1 = torch.tensor(2.0, device=resolved_device, requires_grad=True)
+    optimizer = torch.optim.SGD((x0, x1), lr=learning_rate)
+    for _ in range(steps):
+        optimizer.zero_grad()
+        loss = rosenbrock(x0, x1)
+        loss.backward()
+        optimizer.step()
+    return float(rosenbrock(x0, x1).detach().cpu())
+
+
+if __name__ == "__main__":
+    print(json.dumps({"device": "cpu", "loss": run()}))

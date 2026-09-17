@@ -1,59 +1,61 @@
-import os, sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  # for importing the parent dirs
+"""Monte Carlo value evaluation with a readable random policy agent."""
+
+from __future__ import annotations
+
 from collections import defaultdict
 import numpy as np
-from common.gridworld import GridWorld
 
 
 class RandomAgent:
-    def __init__(self):
-        self.gamma = 0.9
-        self.action_size = 4
+    """Every-visit Monte Carlo evaluator for a fixed random behavior policy."""
 
-        random_actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-        self.pi = defaultdict(lambda: random_actions)
-        self.V = defaultdict(lambda: 0)
-        self.cnts = defaultdict(lambda: 0)
+    def __init__(self, gamma=0.9):
+        self.gamma = gamma
+        self.V = defaultdict(float)
+        self.counts = defaultdict(int)
         self.memory = []
 
-    def get_action(self, state):
-        action_probs = self.pi[state]
-        actions = list(action_probs.keys())
-        probs = list(action_probs.values())
-        return np.random.choice(actions, p=probs)
+    def get_action(self, state, rng=None):
+        return int((rng or np.random.default_rng()).integers(4))
 
     def add(self, state, action, reward):
-        data = (state, action, reward)
-        self.memory.append(data)
+        self.memory.append((state, action, reward))
 
     def reset(self):
         self.memory.clear()
 
-    def eval(self):
-        G = 0
-        for data in reversed(self.memory):
-            state, action, reward = data
-            G = self.gamma * G + reward
-            self.cnts[state] += 1
-            self.V[state] += (G - self.V[state]) / self.cnts[state]
+    def evaluate(self):
+        total = 0.0
+        for state, _, reward in reversed(self.memory):
+            total = self.gamma * total + reward
+            self.counts[state] += 1
+            self.V[state] += (total - self.V[state]) / self.counts[state]
 
 
-env = GridWorld()
-agent = RandomAgent()
+def run(*, episodes: int = 1, seed: int = 0) -> dict[str, object]:
+    """Evaluate a tiny two-step random-policy episode repeatedly."""
 
-episodes = 1000
-for episode in range(episodes):
-    state = env.reset()
-    agent.reset()
+    if episodes < 1:
+        raise ValueError("episodes must be at least 1")
+    rng = np.random.default_rng(seed)
+    agent = RandomAgent()
+    for _ in range(episodes):
+        agent.reset()
+        state = 0
+        for step in range(2):
+            action = agent.get_action(state, rng)
+            reward = float(step == 1 and action == 0)
+            agent.add(state, action, reward)
+            state += 1
+        agent.evaluate()
+    return {
+        "episodes": episodes,
+        "seed": seed,
+        "values": {str(state): float(value) for state, value in agent.V.items()},
+    }
 
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
 
-        agent.add(state, action, reward)
-        if done:
-            agent.eval()
-            break
+if __name__ == "__main__":
+    import json
 
-        state = next_state
-
-env.render_v(agent.V)
+    print(json.dumps(run(), indent=2, sort_keys=True))

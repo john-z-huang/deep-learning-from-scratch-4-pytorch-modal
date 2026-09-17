@@ -1,142 +1,194 @@
-import copy
-from collections import deque
-import random
-import matplotlib.pyplot as plt
+"""Readable, device-aware DQN implementation for the chapter 08 lesson."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
 import numpy as np
-import gym
-from dezero import Model
-from dezero import optimizers
-import dezero.functions as F
-import dezero.layers as L
+import torch
+from torch import nn
+
+from ch08.replay_buffer import ReplayBuffer
+from pytorch.common import (
+    device_metadata,
+    make_cartpole,
+    resolve_device,
+    save_training_artifacts,
+    seed_everything,
+)
 
 
-class ReplayBuffer:
-    def __init__(self, buffer_size, batch_size):
-        self.buffer = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
+class QNet(nn.Module):
+    """Small multilayer perceptron that predicts all discrete action values."""
 
-    def add(self, state, action, reward, next_state, done):
-        data = (state, action, reward, next_state, done)
-        self.buffer.append(data)
-
-    def __len__(self):
-        return len(self.buffer)
-
-    def get_batch(self):
-        data = random.sample(self.buffer, self.batch_size)
-
-        state = np.stack([x[0] for x in data])
-        action = np.array([x[1] for x in data])
-        reward = np.array([x[2] for x in data])
-        next_state = np.stack([x[3] for x in data])
-        done = np.array([x[4] for x in data]).astype(np.int32)
-        return state, action, reward, next_state, done
-
-
-class QNet(Model):
-    def __init__(self, action_size):
+    def __init__(self, observation_size: int, action_size: int) -> None:
         super().__init__()
-        self.l1 = L.Linear(128)
-        self.l2 = L.Linear(128)
-        self.l3 = L.Linear(action_size)
+        self.layers = nn.Sequential(
+            nn.Linear(observation_size, 64),
+            nn.ReLU(),
+            nn.Linear(64, action_size),
+        )
 
-    def forward(self, x):
-        x = F.relu(self.l1(x))
-        x = F.relu(self.l2(x))
-        x = self.l3(x)
-        return x
+    def forward(self, states: torch.Tensor) -> torch.Tensor:
+        return self.layers(states)
 
 
 class DQNAgent:
-    def __init__(self):
+    """Epsilon-greedy DQN agent with a target network and replay memory."""
+
+    def __init__(
+        self,
+        observation_size: int,
+        action_size: int,
+        device: torch.device,
+        *,
+        batch_size: int = 32,
+        seed: int = 0,
+    ) -> None:
+        self.action_size = action_size
         self.gamma = 0.98
-        self.lr = 0.0005
         self.epsilon = 0.1
-        self.buffer_size = 10000
-        self.batch_size = 32
-        self.action_size = 2
+        self.device = device
+        self.rng = np.random.default_rng(seed)
+        self.memory = ReplayBuffer(10_000)
+        self.batch_size = batch_size
+        self.qnet = QNet(observation_size, action_size).to(device)
+        self.target = QNet(observation_size, action_size).to(device)
+        self.target.load_state_dict(self.qnet.state_dict())
+        self.optimizer = torch.optim.Adam(self.qnet.parameters(), lr=5e-4)
 
-        self.replay_buffer = ReplayBuffer(self.buffer_size, self.batch_size)
-        self.qnet = QNet(self.action_size)
-        self.qnet_target = QNet(self.action_size)
-        self.optimizer = optimizers.Adam(self.lr)
-        self.optimizer.setup(self.qnet)
+    def get_action(self, state: np.ndarray) -> int:
+        if self.rng.random() < self.epsilon:
+            return int(self.rng.integers(self.action_size))
+        state_tensor = torch.as_tensor(
+            state, dtype=torch.float32, device=self.device
+        ).unsqueeze(0)
+        with torch.no_grad():
+            return int(self.qnet(state_tensor).argmax(dim=1).item())
 
-    def get_action(self, state):
-        if np.random.rand() < self.epsilon:
-            return np.random.choice(self.action_size)
-        else:
-            state = state[np.newaxis, :]
-            qs = self.qnet(state)
-            return qs.data.argmax()
-
-    def update(self, state, action, reward, next_state, done):
-        self.replay_buffer.add(state, action, reward, next_state, done)
-        if len(self.replay_buffer) < self.batch_size:
-            return
-
-        state, action, reward, next_state, done = self.replay_buffer.get_batch()
-        qs = self.qnet(state)
-        q = qs[np.arange(self.batch_size), action]
-
-        next_qs = self.qnet_target(next_state)
-        next_q = next_qs.max(axis=1)
-        next_q.unchain()
-        target = reward + (1 - done) * self.gamma * next_q
-
-        loss = F.mean_squared_error(q, target)
-
-        self.qnet.cleargrads()
+    def update(
+        self, state, action: int, reward: float, next_state, done: bool
+    ) -> float | None:
+        self.memory.add(state, action, reward, next_state, done)
+        if len(self.memory) < self.batch_size:
+            return None
+        batch = self.memory.sample(self.batch_size, self.rng)
+        states = torch.as_tensor(
+            np.stack([item.state for item in batch]),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        actions = torch.as_tensor(
+            [item.action for item in batch], dtype=torch.int64, device=self.device
+        )
+        rewards = torch.as_tensor(
+            [item.reward for item in batch],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        next_states = torch.as_tensor(
+            np.stack([item.next_state for item in batch]),
+            dtype=torch.float32,
+            device=self.device,
+        )
+        dones = torch.as_tensor(
+            [item.done for item in batch], dtype=torch.float32, device=self.device
+        )
+        current = self.qnet(states).gather(1, actions[:, None]).squeeze(1)
+        with torch.no_grad():
+            future = self.target(next_states).max(dim=1).values
+            target = rewards + (1 - dones) * self.gamma * future
+        loss = nn.functional.mse_loss(current, target)
+        self.optimizer.zero_grad()
         loss.backward()
-        self.optimizer.update()
+        self.optimizer.step()
+        return float(loss.detach().cpu())
 
-    def sync_qnet(self):
-        self.qnet_target = copy.deepcopy(self.qnet)
+    def sync_target(self) -> None:
+        """Copy online parameters to the target network."""
 
-episodes = 300
-sync_interval = 20
-env = gym.make('CartPole-v0')
-agent = DQNAgent()
-reward_history = []
-
-for episode in range(episodes):
-    state = env.reset()
-    done = False
-    total_reward = 0
-
-    while not done:
-        action = agent.get_action(state)
-        next_state, reward, done, info = env.step(action)
-
-        agent.update(state, action, reward, next_state, done)
-        state = next_state
-        total_reward += reward
-
-    if episode % sync_interval == 0:
-        agent.sync_qnet()
-
-    reward_history.append(total_reward)
-    if episode % 10 == 0:
-        print("episode :{}, total reward : {}".format(episode, total_reward))
+        self.target.load_state_dict(self.qnet.state_dict())
 
 
-# === Plot ===
-plt.xlabel('Episode')
-plt.ylabel('Total Reward')
-plt.plot(range(len(reward_history)), reward_history)
-plt.show()
+def run(
+    episodes: int = 1,
+    *,
+    seed: int = 0,
+    device: str | torch.device = "cpu",
+    output_dir: str | Path | None = None,
+    checkpoint_interval: int = 1,
+    max_steps: int = 500,
+) -> dict[str, object]:
+    """Run a bounded CartPole DQN experiment and optionally save artifacts."""
+
+    if episodes < 1 or max_steps < 1 or checkpoint_interval < 1:
+        raise ValueError("episodes, max_steps, and checkpoint_interval must be positive")
+    seed_everything(seed)
+    resolved_device = resolve_device(device)
+    env = make_cartpole(seed)
+    agent = DQNAgent(
+        int(env.observation_space.shape[0]),
+        int(env.action_space.n),
+        resolved_device,
+        seed=seed,
+    )
+    rewards = []
+    losses = []
+    try:
+        for episode in range(episodes):
+            state, _ = env.reset(seed=seed + episode)
+            total = 0.0
+            for _ in range(max_steps):
+                action = agent.get_action(state)
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+                loss = agent.update(state, action, reward, next_state, done)
+                if loss is not None:
+                    losses.append(loss)
+                total += float(reward)
+                state = next_state
+                if done:
+                    break
+            if episode % checkpoint_interval == 0:
+                agent.sync_target()
+            rewards.append(total)
+    finally:
+        env.close()
+    metadata = {
+        "experiment": "chapter08_dqn",
+        "seed": seed,
+        **device_metadata(resolved_device),
+        "mean_loss": float(np.mean(losses)) if losses else None,
+    }
+    artifacts = (
+        save_training_artifacts(
+            rewards,
+            output_dir,
+            metadata=metadata,
+            checkpoint={
+                "experiment": "chapter08_dqn",
+                "model_state_dict": agent.qnet.state_dict(),
+            },
+        )
+        if output_dir is not None
+        else {}
+    )
+    return {**metadata, "rewards": rewards, "artifacts": artifacts}
 
 
-# === Play CartPole ===
-agent.epsilon = 0  # greedy policy
-state = env.reset()
-done = False
-total_reward = 0
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--episodes", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--output-dir", default="chapter08-runs")
+    parser.add_argument("--checkpoint-interval", type=int, default=1)
+    parser.add_argument("--max-steps", type=int, default=500)
+    args = parser.parse_args()
+    print(json.dumps(run(**vars(args)), indent=2, sort_keys=True))
 
-while not done:
-    action = agent.get_action(state)
-    next_state, reward, done, info = env.step(action)
-    state = next_state
-    total_reward += reward
-    env.render()
-print('Total Reward:', total_reward)
+
+if __name__ == "__main__":
+    main()

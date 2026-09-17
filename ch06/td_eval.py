@@ -1,45 +1,34 @@
-import os, sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  # for importing the parent dirs
+"""TD(0) state-value update for a fixed policy."""
+
+from __future__ import annotations
+
 from collections import defaultdict
-import numpy as np
-from common.gridworld import GridWorld
 
 
 class TdAgent:
-    def __init__(self):
-        self.gamma = 0.9
-        self.alpha = 0.01
-        self.action_size = 4
+    def __init__(self, alpha=0.01, gamma=0.9):
+        self.alpha, self.gamma, self.V = alpha, gamma, defaultdict(float)
 
-        random_actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-        self.pi = defaultdict(lambda: random_actions)
-        self.V = defaultdict(lambda: 0)
-
-    def get_action(self, state):
-        action_probs = self.pi[state]
-        actions = list(action_probs.keys())
-        probs = list(action_probs.values())
-        return np.random.choice(actions, p=probs)
-
-    def eval(self, state, reward, next_state, done):
-        next_V = 0 if done else self.V[next_state]
-        target = reward + self.gamma * next_V
-        self.V[state] += (target - self.V[state]) * self.alpha
+    def evaluate(self, state, reward, next_state, done):
+        next_value = 0.0 if done else self.V[next_state]
+        self.V[state] += self.alpha * (reward + self.gamma * next_value - self.V[state])
 
 
-env = GridWorld()
-agent = TdAgent()
+def run(*, episodes: int = 1, seed: int = 0) -> dict[str, object]:
+    """Evaluate a deterministic reward sequence using TD(0) bootstrapping."""
 
-episodes = 1000
-for episode in range(episodes):
-    state = env.reset()
+    if episodes < 1:
+        raise ValueError("episodes must be at least 1")
+    agent = TdAgent()
+    for _ in range(episodes):
+        agent.evaluate(0, 0.0, 1, False)
+        agent.evaluate(1, 1.0, 2, True)
+    return {
+        "episodes": episodes,
+        "seed": seed,
+        "values": {str(state): float(value) for state, value in agent.V.items()},
+    }
 
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
 
-        agent.eval(state, reward, next_state, done)
-        if done:
-            break
-        state = next_state
-
-env.render_v(agent.V)
+if __name__ == "__main__":
+    print(run())

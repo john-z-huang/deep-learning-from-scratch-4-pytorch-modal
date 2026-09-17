@@ -1,16 +1,26 @@
-import numpy as np
-from dezero import Variable
-import dezero.functions as F
+"""Chapter 07 tensor-operation lesson using PyTorch tensors."""
 
-# Inner products
-a = np.array([1, 2, 3])
-b = np.array([4, 5, 6])
-a, b = Variable(a), Variable(b)  # Optional
-c = F.matmul(a, b)
-print(c)
+from __future__ import annotations
 
-# Matrix product
-a = np.array([[1, 2], [3, 4]])
-b = np.array([[5, 6], [7, 8]])
-c = F.matmul(a, b)
-print(c)
+import json
+
+import torch
+
+
+def dot_product(left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+    """Compute a tensor dot product without converting to NumPy."""
+
+    return torch.matmul(left, right)
+
+
+def run(*, device: str | torch.device = "cpu") -> float:
+    """Run the tensor operation on the explicitly selected device."""
+
+    resolved_device = torch.device(device)
+    left = torch.tensor([1.0, 2.0, 3.0], device=resolved_device)
+    right = torch.tensor([4.0, 5.0, 6.0], device=resolved_device)
+    return float(dot_product(left, right).detach().cpu())
+
+
+if __name__ == "__main__":
+    print(json.dumps({"device": "cpu", "value": run()}))

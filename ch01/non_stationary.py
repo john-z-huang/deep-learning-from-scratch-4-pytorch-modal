@@ -1,74 +1,72 @@
+"""Non-stationary bandit and constant-step-size agent."""
+
+from __future__ import annotations
+
+import json
 import numpy as np
-import matplotlib.pyplot as plt
-from bandit import Agent
 
 
 class NonStatBandit:
-    def __init__(self, arms=10):
-        self.arms = arms
-        self.rates = np.random.rand(arms)
+    """Bandit whose reward probabilities drift after every interaction."""
 
-    def play(self, arm):
+    def __init__(self, arms: int = 10, rng: np.random.Generator | None = None):
+        if arms < 1:
+            raise ValueError("arms must be at least 1")
+        self.rng = rng or np.random.default_rng()
+        self.rates = self.rng.random(arms)
+
+    def play(self, arm: int) -> int:
         rate = self.rates[arm]
-        self.rates += 0.1 * np.random.randn(self.arms)  # Add noise
-        if rate > np.random.rand():
-            return 1
-        else:
-            return 0
+        self.rates += 0.1 * self.rng.standard_normal(len(self.rates))
+        return int(rate > self.rng.random())
 
 
 class AlphaAgent:
-    def __init__(self, epsilon, alpha, actions=10):
-        self.epsilon = epsilon
+    """Epsilon-greedy agent using a constant step size ``alpha``."""
+
+    def __init__(
+        self,
+        epsilon: float = 0.1,
+        alpha: float = 0.8,
+        actions: int = 10,
+        rng: np.random.Generator | None = None,
+    ):
+        if actions < 1 or not 0 <= epsilon <= 1 or not 0 < alpha <= 1:
+            raise ValueError("invalid agent parameters")
+        self.epsilon, self.alpha, self.rng = (
+            epsilon,
+            alpha,
+            (rng or np.random.default_rng()),
+        )
         self.Qs = np.zeros(actions)
-        self.alpha = alpha
 
-    def update(self, action, reward):
-        self.Qs[action] += (reward - self.Qs[action]) * self.alpha
+    def update(self, action: int, reward: float) -> None:
+        self.Qs[action] += self.alpha * (reward - self.Qs[action])
 
-    def get_action(self):
-        if np.random.rand() < self.epsilon:
-            return np.random.randint(0, len(self.Qs))
-        return np.argmax(self.Qs)
+    def get_action(self) -> int:
+        return (
+            int(self.rng.integers(len(self.Qs)))
+            if self.rng.random() < self.epsilon
+            else int(np.argmax(self.Qs))
+        )
 
 
-runs = 200
-steps = 1000
-epsilon = 0.1
-alpha = 0.8
-agent_types = ['sample average', 'alpha const update']
-results = {}
+def run(*, steps: int = 100, seed: int = 0) -> dict[str, object]:
+    """Run a bounded drifting-bandit experiment and return its reward trace."""
 
-for agent_type in agent_types:
-    all_rates = np.zeros((runs, steps))  # (200, 1000)
+    if steps < 1:
+        raise ValueError("steps must be at least 1")
+    rng = np.random.default_rng(seed)
+    bandit = NonStatBandit(rng=rng)
+    agent = AlphaAgent(rng=rng)
+    rewards = []
+    for _ in range(steps):
+        action = agent.get_action()
+        reward = bandit.play(action)
+        agent.update(action, reward)
+        rewards.append(reward)
+    return {"steps": steps, "rewards": rewards, "mean_reward": float(np.mean(rewards))}
 
-    for run in range(runs):
-        if agent_type == 'sample average':
-            agent = Agent(epsilon)
-        else:
-            agent = AlphaAgent(epsilon, alpha)
 
-        bandit = NonStatBandit()
-        total_reward = 0
-        rates = []
-
-        for step in range(steps):
-            action = agent.get_action()
-            reward = bandit.play(action)
-            agent.update(action, reward)
-            total_reward += reward
-            rates.append(total_reward / (step + 1))
-
-        all_rates[run] = rates
-
-    avg_rates = np.average(all_rates, axis=0)
-    results[agent_type] = avg_rates
-
-# plot
-plt.figure()
-plt.ylabel('Average Rates')
-plt.xlabel('Steps')
-for key, avg_rates in results.items():
-    plt.plot(avg_rates, label=key)
-plt.legend()
-plt.show()
+if __name__ == "__main__":
+    print(json.dumps(run(), indent=2, sort_keys=True))

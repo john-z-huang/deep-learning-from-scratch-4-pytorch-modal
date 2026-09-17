@@ -1,13 +1,40 @@
-import numpy as np
-import gym
+"""Gymnasium reset/step API demonstration for the chapter 08 environment."""
+
+from __future__ import annotations
+
+import json
 
 
-env = gym.make('CartPole-v0')
-state = env.reset()
-done = False
+def rollout(seed: int = 0, *, steps: int = 5) -> dict[str, object]:
+    """Run a random CartPole rollout and return observations/rewards, headlessly."""
 
-while not done:
-    env.render()
-    action = np.random.choice([0, 1])
-    next_state, reward, done, info = env.step(action)
-env.close()
+    if steps < 1:
+        raise ValueError("steps must be at least 1")
+    import gymnasium as gym
+
+    env = gym.make("CartPole-v1")
+    env.action_space.seed(seed)
+    try:
+        observation, info = env.reset(seed=seed)
+        rewards = []
+        for _ in range(steps):
+            action = env.action_space.sample()
+            observation, reward, terminated, truncated, info = env.step(action)
+            rewards.append(float(reward))
+            if terminated or truncated:
+                break
+        return {
+            "seed": seed,
+            "observation_shape": list(observation.shape),
+            "rewards": rewards,
+            "info_keys": sorted(info),
+        }
+    finally:
+        env.close()
+
+
+run = rollout
+
+
+if __name__ == "__main__":
+    print(json.dumps(rollout(), indent=2, sort_keys=True))

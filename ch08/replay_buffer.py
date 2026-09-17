@@ -1,48 +1,62 @@
+"""Standalone replay-memory data structure used by the chapter 08 lesson."""
+
+from __future__ import annotations
+
+import json
 from collections import deque
-import random
+from dataclasses import dataclass
+from typing import Any
+
 import numpy as np
-import gym
+
+
+@dataclass(frozen=True)
+class Transition:
+    """One transition sampled by a value-based agent."""
+
+    state: Any
+    action: int
+    reward: float
+    next_state: Any
+    done: bool
 
 
 class ReplayBuffer:
-    def __init__(self, buffer_size, batch_size):
-        self.buffer = deque(maxlen=buffer_size)
-        self.batch_size = batch_size
+    """Fixed-capacity FIFO buffer with reproducible NumPy sampling."""
 
-    def add(self, state, action, reward, next_state, done):
-        data = (state, action, reward, next_state, done)
-        self.buffer.append(data)
+    def __init__(self, capacity: int = 10_000) -> None:
+        if capacity < 1:
+            raise ValueError("capacity must be at least 1")
+        self._items: deque[Transition] = deque(maxlen=capacity)
 
-    def __len__(self):
-        return len(self.buffer)
+    def add(self, state, action: int, reward: float, next_state, done: bool) -> None:
+        self._items.append(Transition(state, action, reward, next_state, done))
 
-    def get_batch(self):
-        data = random.sample(self.buffer, self.batch_size)
+    def sample(
+        self, batch_size: int, rng: np.random.Generator | None = None
+    ) -> list[Transition]:
+        """Sample without replacement, preserving transition structure."""
 
-        state = np.stack([x[0] for x in data])
-        action = np.array([x[1] for x in data])
-        reward = np.array([x[2] for x in data])
-        next_state = np.stack([x[3] for x in data])
-        done = np.array([x[4] for x in data]).astype(np.int32)
-        return state, action, reward, next_state, done
+        if not 1 <= batch_size <= len(self._items):
+            raise ValueError("batch_size must be between 1 and the buffer length")
+        generator = rng or np.random.default_rng()
+        indices = generator.choice(len(self._items), size=batch_size, replace=False)
+        items = list(self._items)
+        return [items[int(index)] for index in indices]
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
-env = gym.make('CartPole-v0')
-replay_buffer = ReplayBuffer(buffer_size=10000, batch_size=32)
+def run(*, capacity: int = 3) -> dict[str, object]:
+    """Demonstrate FIFO eviction and a structured sample."""
 
-for episode in range(10):
-    state = env.reset()
-    done = False
+    buffer = ReplayBuffer(capacity)
+    for state in range(capacity + 1):
+        buffer.add(state, 0, float(state), state + 1, False)
+    sample = buffer.sample(min(2, len(buffer)), np.random.default_rng(0))
+    return {"size": len(buffer), "states": [item.state for item in sample]}
 
-    while not done:
-        action = 0
-        next_state, reward, done, info = env.step(action)
-        replay_buffer.add(state, action, reward, next_state, done)
-        state = next_state
 
-state, action, reward, next_state, done = replay_buffer.get_batch()
-print(state.shape)  # (32, 4)
-print(action.shape)  # (32,)
-print(reward.shape)  # (32,)
-print(next_state.shape)  # (32, 4)
-print(done.shape)  # (32,)
+if __name__ == "__main__":
+    print(json.dumps(run(), indent=2, sort_keys=True))

@@ -1,56 +1,84 @@
-import os, sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  # for importing the parent dirs
+"""Q-learning: readable tabular update rule and bounded chapter runner hooks."""
+
 from collections import defaultdict
 import numpy as np
-from common.gridworld import GridWorld
-from common.utils import greedy_probs
+
+
+def greedy_probs(Q, state, epsilon=0, action_size=4):
+    best = int(np.argmax([Q[(state, a)] for a in range(action_size)]))
+    base = epsilon / action_size
+    return {a: base + (1 - epsilon if a == best else 0) for a in range(action_size)}
 
 
 class QLearningAgent:
     def __init__(self):
-        self.gamma = 0.9
-        self.alpha = 0.8
-        self.epsilon = 0.1
-        self.action_size = 4
-
-        random_actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-        self.pi = defaultdict(lambda: random_actions)
-        self.b = defaultdict(lambda: random_actions)
-        self.Q = defaultdict(lambda: 0)
+        self.gamma, self.alpha, self.epsilon, self.action_size = 0.9, 0.8, 0.1, 4
+        self.Q = defaultdict(float)
+        self.b = defaultdict(lambda: {a: 0.25 for a in range(4)})
 
     def get_action(self, state):
-        action_probs = self.b[state]
-        actions = list(action_probs.keys())
-        probs = list(action_probs.values())
-        return np.random.choice(actions, p=probs)
+        probs = self.b[state]
+        return int(np.random.choice(list(probs), p=list(probs.values())))
 
     def update(self, state, action, reward, next_state, done):
-        if done:
-            next_q_max = 0
-        else:
-            next_qs = [self.Q[next_state, a] for a in range(self.action_size)]
-            next_q_max = max(next_qs)
-
-        target = reward + self.gamma * next_q_max
-        self.Q[state, action] += (target - self.Q[state, action]) * self.alpha
-
-        self.pi[state] = greedy_probs(self.Q, state, epsilon=0)
+        next_q = (
+            0 if done else max(self.Q[(next_state, a)] for a in range(self.action_size))
+        )
+        self.Q[(state, action)] += self.alpha * (
+            reward + self.gamma * next_q - self.Q[(state, action)]
+        )
         self.b[state] = greedy_probs(self.Q, state, self.epsilon)
 
 
-env = GridWorld()
-agent = QLearningAgent()
+def run(
+    *,
+    episodes=1,
+    seed=0,
+    device="cpu",
+    output_dir="temporal-difference-runs",
+    checkpoint_interval=1,
+):
+    from common.gridworld import GridWorld
+    from pytorch.common import save_training_artifacts
 
-episodes = 10000
-for episode in range(episodes):
-    state = env.reset()
-
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
-
-        agent.update(state, action, reward, next_state, done)
-        if done:
-            break
-        state = next_state
-
-env.render_q(agent.Q)
+    np.random.seed(seed)
+    env = GridWorld()
+    agent = QLearningAgent()
+    rewards = []
+    for _ in range(episodes):
+        state = env.reset()
+        total = 0.0
+        for _ in range(100):
+            action = agent.get_action(state)
+            next_state, reward, done = env.step(action)
+            agent.update(state, action, reward, next_state, done)
+            total += reward
+            if done:
+                break
+            state = next_state
+        rewards.append(total)
+    metadata = {
+        "schema_version": 1,
+        "experiment": "temporal_difference",
+        "implementation": "chapter-ch06",
+        "seed": seed,
+        "requested_device": device,
+        "device": "cpu",
+    }
+    paths = save_training_artifacts(
+        rewards,
+        output_dir,
+        metadata=metadata,
+        checkpoint={
+            "experiment": "temporal_difference",
+            "seed": seed,
+            "Q": dict(agent.Q),
+        },
+    )
+    return {
+        **metadata,
+        "episode_count": episodes,
+        "rewards": rewards,
+        "mean_reward": float(np.mean(rewards)),
+        "output_paths": paths,
+    }

@@ -1,49 +1,60 @@
-import os, sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  # for importing the parent dirs
+"""Minimal epsilon-greedy Q-learning agent for the chapter introduction."""
+
+from __future__ import annotations
+
 from collections import defaultdict
 import numpy as np
-from common.gridworld import GridWorld
 
 
 class QLearningAgent:
-    def __init__(self):
-        self.gamma = 0.9
-        self.alpha = 0.8
-        self.epsilon = 0.1
-        self.action_size = 4
-        self.Q = defaultdict(lambda: 0)
+    def __init__(self, action_size=4, alpha=0.8, gamma=0.9, epsilon=0.1):
+        self.action_size, self.alpha, self.gamma, self.epsilon = (
+            action_size,
+            alpha,
+            gamma,
+            epsilon,
+        )
+        self.Q = defaultdict(float)
 
     def get_action(self, state):
         if np.random.rand() < self.epsilon:
-            return np.random.choice(self.action_size)
-        else:
-            qs = [self.Q[state, a] for a in range(self.action_size)]
-            return np.argmax(qs)
+            return int(np.random.randint(self.action_size))
+        return int(np.argmax([self.Q[state, a] for a in range(self.action_size)]))
 
     def update(self, state, action, reward, next_state, done):
-        if done:
-            next_q_max = 0
-        else:
-            next_qs = [self.Q[next_state, a] for a in range(self.action_size)]
-            next_q_max = max(next_qs)
-
-        target = reward + self.gamma * next_q_max
-        self.Q[state, action] += (target - self.Q[state, action]) * self.alpha
+        next_q = (
+            0.0 if done else max(self.Q[next_state, a] for a in range(self.action_size))
+        )
+        self.Q[state, action] += self.alpha * (
+            reward + self.gamma * next_q - self.Q[state, action]
+        )
 
 
-env = GridWorld()
-agent = QLearningAgent()
+def run(*, episodes: int = 1, seed: int = 0) -> dict[str, object]:
+    """Learn the optimal action in a two-state deterministic toy MDP."""
 
-episodes = 1000
-for episode in range(episodes):
-    state = env.reset()
+    if episodes < 1:
+        raise ValueError("episodes must be at least 1")
+    np.random.seed(seed)
+    agent = QLearningAgent(epsilon=0.1)
+    for _ in range(episodes):
+        state = 0
+        for _ in range(4):
+            action = agent.get_action(state)
+            next_state = 1 if action == 0 else state
+            done = next_state == 1
+            agent.update(state, action, float(done), next_state, done)
+            if done:
+                break
+            state = next_state
+    return {
+        "episodes": episodes,
+        "seed": seed,
+        "q_values": {f"{state}:{action}": float(value) for (state, action), value in agent.Q.items()},
+    }
 
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
 
-        agent.update(state, action, reward, next_state, done)
-        if done:
-            break
-        state = next_state
+if __name__ == "__main__":
+    import json
 
-env.render_q(agent.Q)
+    print(json.dumps(run(), indent=2, sort_keys=True))

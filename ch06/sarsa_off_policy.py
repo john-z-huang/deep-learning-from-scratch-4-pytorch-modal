@@ -1,73 +1,57 @@
-if '__file__' in globals():
-    import os, sys
-    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from collections import defaultdict, deque
+"""Off-policy SARSA surface retaining target and behavior policies."""
+
+from __future__ import annotations
+
+import json
+
 import numpy as np
-from common.gridworld import GridWorld
-from common.utils import greedy_probs
+
+from ch06.sarsa import SarsaAgent
 
 
-class SarsaOffPolicyAgent:
-    def __init__(self):
-        self.gamma = 0.9
-        self.alpha = 0.8
-        self.epsilon = 0.1
-        self.action_size = 4
+class SarsaOffPolicyAgent(SarsaAgent):
+    """SARSA agent whose behavior policy may differ from its target policy."""
 
-        random_actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-        self.pi = defaultdict(lambda: random_actions)
-        self.b = defaultdict(lambda: random_actions)
-        self.Q = defaultdict(lambda: 0)
-        self.memory = deque(maxlen=2)
+    def __init__(self, *, behavior_epsilon: float = 0.1, **kwargs):
+        super().__init__(**kwargs)
+        self.epsilon = behavior_epsilon
 
-    def get_action(self, state):
-        action_probs = self.b[state]
-        actions = list(action_probs.keys())
-        probs = list(action_probs.values())
-        return np.random.choice(actions, p=probs)
+    def target_action(self, state):
+        """Return the greedy target-policy action without exploration."""
 
-    def reset(self):
-        self.memory.clear()
+        return int(np.argmax([self.Q[state, a] for a in range(self.action_size)]))
 
-    def update(self, state, action, reward, done):
-        self.memory.append((state, action, reward, done))
-        if len(self.memory) < 2:
-            return
+    def update_off_policy(self, state, action, reward, next_state, done):
+        """Bootstrap from the greedy target policy while behaving epsilon-greedily."""
 
-        state, action, reward, done = self.memory[0]
-        next_state, next_action, _, _ = self.memory[1]
-
-        if done:
-            next_q = 0
-            rho = 1
-        else:
-            next_q = self.Q[next_state, next_action]
-            rho = self.pi[next_state][next_action] / self.b[next_state][next_action]
-
-        target = rho * (reward + self.gamma * next_q)
-        self.Q[state, action] += (target - self.Q[state, action]) * self.alpha
-
-        self.pi[state] = greedy_probs(self.Q, state, 0)
-        self.b[state] = greedy_probs(self.Q, state, self.epsilon)
+        next_action = self.target_action(next_state)
+        self.update(state, action, reward, next_state, next_action, done)
 
 
-env = GridWorld()
-agent = SarsaOffPolicyAgent()
+def run(*, episodes: int = 1, seed: int = 0) -> dict[str, object]:
+    """Run a bounded off-policy SARSA example on a deterministic toy MDP."""
 
-episodes = 10000
-for episode in range(episodes):
-    state = env.reset()
-    agent.reset()
+    if episodes < 1:
+        raise ValueError("episodes must be at least 1")
+    np.random.seed(seed)
+    agent = SarsaOffPolicyAgent()
+    for _ in range(episodes):
+        state = 0
+        for _ in range(4):
+            action = agent.get_action(state)
+            next_state = 1 if action == 0 else state
+            done = next_state == 1
+            agent.update_off_policy(state, action, float(done), next_state, done)
+            if done:
+                break
+            state = next_state
+    return {
+        "episodes": episodes,
+        "seed": seed,
+        "q_values": {f"{state}:{action}": float(value) for (state, action), value in agent.Q.items()},
+    }
+    return {"seed": seed, "agent": "SarsaOffPolicyAgent"}
 
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
 
-        agent.update(state, action, reward, done)
-
-        if done:
-            agent.update(next_state, None, None, None)
-            break
-        state = next_state
-
-env.render_q(agent.Q)
+if __name__ == "__main__":
+    print(json.dumps(run(), indent=2, sort_keys=True))

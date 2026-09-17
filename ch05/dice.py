@@ -1,18 +1,20 @@
+"""Monte Carlo estimation of the expected sum of dice."""
+
 import numpy as np
 
 
-def sample(dices=2):
-    x = 0
-    for _ in range(dices):
-        x += np.random.choice([1, 2, 3, 4, 5, 6])
-    return x
+def sample(dices=2, rng=None):
+    rng = rng or np.random.default_rng()
+    return int(rng.integers(1, 7, size=dices).sum())
 
 
-trial = 1000
-V, n = 0, 0
+def run(*, trials=100, dices=2, seed=0):
+    rng = np.random.default_rng(seed)
+    estimate = 0.0
+    for count in range(1, trials + 1):
+        estimate += (sample(dices, rng) - estimate) / count
+    return {"trials": trials, "estimate": float(estimate), "seed": seed}
 
-for _ in range(trial):
-    s = sample()
-    n += 1
-    V += (s - V) / n
-    print(V)
+
+if __name__ == "__main__":
+    print(run())

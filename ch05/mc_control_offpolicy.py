@@ -1,69 +1,72 @@
-import os, sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..'))  # for importing the parent dirs
+"""Off-policy Monte Carlo control agent with target/behavior policies."""
+
+from __future__ import annotations
+
 from collections import defaultdict
+import json
+
 import numpy as np
-from common.gridworld import GridWorld
-from common.utils import greedy_probs
+
+from ch05.mc_control import greedy_probs
 
 
 class McOffPolicyAgent:
-    def __init__(self):
-        self.gamma = 0.9
-        self.epsilon = 0.1
-        self.alpha = 0.2
-        self.action_size = 4
+    """Weighted-return Monte Carlo control with separate ``pi`` and ``b``."""
 
-        random_actions = {0: 0.25, 1: 0.25, 2: 0.25, 3: 0.25}
-        self.pi = defaultdict(lambda: random_actions)
-        self.b = defaultdict(lambda: random_actions)
-        self.Q = defaultdict(lambda: 0)
+    def __init__(self, *, action_size: int = 4, epsilon: float = 0.1, rng=None):
+        self.gamma, self.epsilon, self.alpha = 0.9, epsilon, 0.2
+        self.action_size = action_size
+        self.rng = rng or np.random.default_rng()
+        self.pi = defaultdict(lambda: {a: 0.25 for a in range(4)})
+        self.b = defaultdict(lambda: {a: 0.25 for a in range(4)})
+        self.Q = defaultdict(float)
         self.memory = []
 
     def get_action(self, state):
-        action_probs = self.b[state]
-        actions = list(action_probs.keys())
-        probs = list(action_probs.values())
-        return np.random.choice(actions, p=probs)
+        probs = self.b[state]
+        return int(self.rng.choice(list(probs), p=list(probs.values())))
 
     def add(self, state, action, reward):
-        data = (state, action, reward)
-        self.memory.append(data)
+        self.memory.append((state, action, reward))
 
     def reset(self):
         self.memory.clear()
 
-    def update(self):
-        G = 0
-        rho = 1
-
-        for data in reversed(self.memory):
-            state, action, reward = data
+    def update(self) -> None:
+        G, rho = 0.0, 1.0
+        for state, action, reward in reversed(self.memory):
+            G = reward + self.gamma * G
             key = (state, action)
-
-            G = self.gamma * rho * G + reward
-            self.Q[key] += (G - self.Q[key]) * self.alpha
+            self.Q[key] += self.alpha * rho * (G - self.Q[key])
             rho *= self.pi[state][action] / self.b[state][action]
+            self.pi[state] = greedy_probs(self.Q, state)
+            self.b[state] = greedy_probs(
+                self.Q, state, self.epsilon, self.action_size
+            )
 
-            self.pi[state] = greedy_probs(self.Q, state, epsilon=0)
-            self.b[state] = greedy_probs(self.Q, state, self.epsilon)
+
+def run(*, episodes: int = 1, seed: int = 0) -> dict[str, object]:
+    """Learn from a bounded two-step trajectory without a rendering side effect."""
+
+    if episodes < 1:
+        raise ValueError("episodes must be at least 1")
+    rng = np.random.default_rng(seed)
+    agent = McOffPolicyAgent(rng=rng)
+    for _ in range(episodes):
+        agent.reset()
+        state = 0
+        for step in range(2):
+            action = agent.get_action(state)
+            reward = float(state == 1 and action == 0)
+            agent.add(state, action, reward)
+            state += 1
+        agent.update()
+    q_values = [
+        {"state": state, "action": action, "value": float(value)}
+        for (state, action), value in sorted(agent.Q.items())
+    ]
+    return {"episodes": episodes, "seed": seed, "q_values": q_values}
 
 
-env = GridWorld()
-agent = McOffPolicyAgent()
-
-episodes = 10000
-for episode in range(episodes):
-    state = env.reset()
-    agent.reset()
-
-    while True:
-        action = agent.get_action(state)
-        next_state, reward, done = env.step(action)
-
-        agent.add(state, action, reward)
-        if done:
-            agent.update()
-            break
-
-        state = next_state
-
-env.render_q(agent.Q)
+if __name__ == "__main__":
+    print(json.dumps(run(), indent=2, sort_keys=True))
