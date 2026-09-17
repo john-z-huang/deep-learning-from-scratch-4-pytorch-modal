@@ -1,4 +1,4 @@
-"""Chapter 07 neural-network entry backed by the PyTorch runner."""
+"""Executable chapter 07 notebook wrapper for the PyTorch neural-network run."""
 
 from pytorch.neural_networks import main
 

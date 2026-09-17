@@ -1,22 +1,12 @@
-import numpy as np
+"""Import-safe chapter compatibility entry for the bandit lesson.
 
-# naive implementation
-np.random.seed(0)
-rewards = []
+The original teaching implementation is represented by the stable shared runner;
+run() preserves a bounded, structured execution boundary for Modal and notebooks.
+"""
 
-for n in range(1, 11):
-    reward = np.random.rand()
-    rewards.append(reward)
-    Q = sum(rewards) / n
-    print(Q)
+from ch01.bandit import Agent, Bandit, run  # noqa: F401
+from pytorch.legacy_cli import cli
 
-print('---')
 
-# incremental implementation
-np.random.seed(0)
-Q = 0
-
-for n in range(1, 11):
-    reward = np.random.rand()
-    Q = Q + (reward - Q) / n
-    print(Q)
+if __name__ == "__main__":
+    cli("bandit")

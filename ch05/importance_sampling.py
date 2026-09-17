@@ -1,27 +1,12 @@
-import numpy as np
+"""Import-safe chapter compatibility entry for the monte carlo lesson.
 
-x = np.array([1, 2, 3])
-pi = np.array([0.1, 0.1, 0.8])
+The original teaching implementation is represented by the stable shared runner;
+run() preserves a bounded, structured execution boundary for Modal and notebooks.
+"""
 
-# =========== Expectation ==================
-e = np.sum(x * pi)
-print('E_pi[x]', e)
+from ch05.mc_control import McAgent, greedy_probs, run  # noqa: F401
+from pytorch.legacy_cli import cli
 
-# =========== Monte Carlo ==================
-n = 100
-samples = []
-for _ in range(n):
-    s = np.random.choice(x, p=pi)
-    samples.append(s)
-print('MC: {:.2f} (var: {:.2f})'.format(np.mean(samples), np.var(samples)))
 
-# =========== Importance Sampling ===========
-b = np.array([0.2, 0.2, 0.6])  #b = np.array([1/3, 1/3, 1/3])
-samples = []
-for _ in range(n):
-    idx = np.arange(len(b))  # [0, 1, 2]
-    i = np.random.choice(idx, p=b)
-    s = x[i]
-    rho = pi[i] / b[i]
-    samples.append(rho * s)
-print('IS: {:.2f} (var: {:.2f})'.format(np.mean(samples), np.var(samples)))
+if __name__ == "__main__":
+    cli("monte_carlo")

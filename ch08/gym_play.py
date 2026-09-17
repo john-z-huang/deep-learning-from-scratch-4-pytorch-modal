@@ -1,13 +1,16 @@
-import numpy as np
-import gym
+"""Non-interactive chapter 08 environment probe."""
+
+from pytorch.common import make_cartpole
 
 
-env = gym.make('CartPole-v0')
-state = env.reset()
-done = False
+def run(seed: int = 0) -> tuple[int, ...]:
+    env = make_cartpole(seed)
+    try:
+        observation, _ = env.reset(seed=seed)
+        return tuple(observation.shape)
+    finally:
+        env.close()
 
-while not done:
-    env.render()
-    action = np.random.choice([0, 1])
-    next_state, reward, done, info = env.step(action)
-env.close()
+
+if __name__ == "__main__":
+    print(run())

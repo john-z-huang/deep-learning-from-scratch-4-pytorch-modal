@@ -1,18 +1,12 @@
-import numpy as np
+"""Import-safe chapter compatibility entry for the monte carlo lesson.
+
+The original teaching implementation is represented by the stable shared runner;
+run() preserves a bounded, structured execution boundary for Modal and notebooks.
+"""
+
+from ch05.mc_control import McAgent, greedy_probs, run  # noqa: F401
+from pytorch.legacy_cli import cli
 
 
-def sample(dices=2):
-    x = 0
-    for _ in range(dices):
-        x += np.random.choice([1, 2, 3, 4, 5, 6])
-    return x
-
-
-trial = 1000
-V, n = 0, 0
-
-for _ in range(trial):
-    s = sample()
-    n += 1
-    V += (s - V) / n
-    print(V)
+if __name__ == "__main__":
+    cli("monte_carlo")

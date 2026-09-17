@@ -1,16 +1,13 @@
-import numpy as np
-from dezero import Variable
-import dezero.functions as F
+"""Chapter 07 tensor-operation lesson using PyTorch tensors."""
 
-# Inner products
-a = np.array([1, 2, 3])
-b = np.array([4, 5, 6])
-a, b = Variable(a), Variable(b)  # Optional
-c = F.matmul(a, b)
-print(c)
+import torch
 
-# Matrix product
-a = np.array([[1, 2], [3, 4]])
-b = np.array([[5, 6], [7, 8]])
-c = F.matmul(a, b)
-print(c)
+
+def run() -> torch.Tensor:
+    left = torch.tensor([1.0, 2.0, 3.0])
+    right = torch.tensor([4.0, 5.0, 6.0])
+    return torch.matmul(left, right)
+
+
+if __name__ == "__main__":
+    print(run())

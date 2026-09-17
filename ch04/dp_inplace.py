@@ -1,17 +1,14 @@
-V = {'L1': 0.0, 'L2': 0.0}
+"""Import-safe chapter compatibility entry for the dynamic programming lesson.
 
-cnt = 0
-while True:
-    t = 0.5 * (-1 + 0.9 * V['L1']) + 0.5 * (1 + 0.9 * V['L2'])
-    delta = abs(t - V['L1'])
-    V['L1'] = t
+The original teaching implementation is represented by the stable shared runner;
+run() preserves a bounded, structured execution boundary for Modal and notebooks.
+"""
 
-    t = 0.5 * (0 + 0.9 * V['L1']) + 0.5 * (-1 + 0.9 * V['L2'])
-    delta = max(delta, abs(t - V['L2']))
-    V['L2'] = t
+from ch04.policy_eval import eval_onestep, policy_eval, uniform_policy  # noqa: F401
+from ch04.policy_iter import policy_iter  # noqa: F401
+from ch04.value_iter import value_iter, value_iter_onestep  # noqa: F401
+from pytorch.legacy_cli import cli
 
-    cnt += 1
-    if delta < 0.0001:
-        print(V)
-        print(cnt)
-        break
+
+if __name__ == "__main__":
+    cli("dynamic_programming")

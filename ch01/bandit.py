@@ -1,62 +1,87 @@
+"""Multi-armed bandit: readable teaching implementation with a bounded runner."""
+
+from __future__ import annotations
+import argparse
+import json
 import numpy as np
-import matplotlib.pyplot as plt
+from pytorch.common import save_training_artifacts
 
 
 class Bandit:
-    def __init__(self, arms=10):
-        self.rates = np.random.rand(arms)
+    def __init__(self, arms=10, rng=None):
+        self.rng = rng or np.random.default_rng()
+        self.rates = self.rng.random(arms)
 
     def play(self, arm):
-        rate = self.rates[arm]
-        if rate > np.random.rand():
-            return 1
-        else:
-            return 0
+        return int(self.rates[arm] > self.rng.random())
 
 
 class Agent:
-    def __init__(self, epsilon, action_size=10):
-        self.epsilon = epsilon
-        self.Qs = np.zeros(action_size)
-        self.ns = np.zeros(action_size)
+    def __init__(self, epsilon, action_size=10, rng=None):
+        self.epsilon, self.rng = epsilon, (rng or np.random.default_rng())
+        self.Qs, self.ns = np.zeros(action_size), np.zeros(action_size)
 
     def update(self, action, reward):
         self.ns[action] += 1
         self.Qs[action] += (reward - self.Qs[action]) / self.ns[action]
 
     def get_action(self):
-        if np.random.rand() < self.epsilon:
-            return np.random.randint(0, len(self.Qs))
-        return np.argmax(self.Qs)
+        return (
+            int(self.rng.integers(len(self.Qs)))
+            if self.rng.random() < self.epsilon
+            else int(np.argmax(self.Qs))
+        )
 
 
-if __name__ == '__main__':
-    steps = 1000
-    epsilon = 0.1
+def run(
+    *, episodes=1, seed=0, device="cpu", output_dir="bandit-runs", checkpoint_interval=1
+):
+    if episodes < 1 or checkpoint_interval < 1:
+        raise ValueError("episodes and checkpoint_interval must be at least 1")
+    rng = np.random.default_rng(seed)
+    bandit, agent, rewards = Bandit(rng=rng), Agent(0.1, rng=rng), []
+    for _ in range(episodes):
+        total = 0.0
+        for _ in range(20):
+            action = agent.get_action()
+            reward = bandit.play(action)
+            agent.update(action, reward)
+            total += reward
+        rewards.append(total)
+    metadata = {
+        "schema_version": 1,
+        "experiment": "bandit",
+        "implementation": "chapter-ch01",
+        "seed": seed,
+        "requested_device": device,
+        "device": "cpu",
+        "arms": 10,
+        "horizon": 20,
+    }
+    paths = save_training_artifacts(
+        rewards,
+        output_dir,
+        metadata=metadata,
+        checkpoint={"experiment": "bandit", "seed": seed, "Qs": agent.Qs.tolist()},
+    )
+    return {
+        **metadata,
+        "episode_count": episodes,
+        "rewards": rewards,
+        "mean_reward": float(np.mean(rewards)),
+        "output_paths": paths,
+    }
 
-    bandit = Bandit()
-    agent = Agent(epsilon)
-    total_reward = 0
-    total_rewards = []
-    rates = []
 
-    for step in range(steps):
-        action = agent.get_action()
-        reward = bandit.play(action)
-        agent.update(action, reward)
-        total_reward += reward
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--episodes", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--device", choices=("cpu", "gpu"), default="cpu")
+    parser.add_argument("--output-dir", default="bandit-runs")
+    parser.add_argument("--checkpoint-interval", type=int, default=1)
+    print(json.dumps(run(**vars(parser.parse_args())), indent=2, sort_keys=True))
 
-        total_rewards.append(total_reward)
-        rates.append(total_reward / (step + 1))
 
-    print(total_reward)
-
-    plt.ylabel('Total reward')
-    plt.xlabel('Steps')
-    plt.plot(total_rewards)
-    plt.show()
-
-    plt.ylabel('Rates')
-    plt.xlabel('Steps')
-    plt.plot(rates)
-    plt.show()
+if __name__ == "__main__":
+    main()
